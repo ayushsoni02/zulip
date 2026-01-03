@@ -3,7 +3,7 @@
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
-import {parseArgs} from "node:util";
+import { parseArgs } from "node:util";
 
 import "css.escape";
 import * as puppeteer from "puppeteer";
@@ -12,9 +12,9 @@ import * as z from "zod/mini";
 const usage =
     "Usage: thread-screenshot.ts <narrow_uri> <narrow> <message_id> <image_path> <realm_url>";
 const {
-    values: {help},
+    values: { help },
     positionals,
-} = parseArgs({options: {help: {type: "boolean"}}, allowPositionals: true});
+} = parseArgs({ options: { help: { type: "boolean" } }, allowPositionals: true });
 
 if (help) {
     console.log(usage);
@@ -40,35 +40,58 @@ console.log(`Capturing screenshot for ${narrow} to ${imagePath}`);
 
 // TODO: Refactor to share code with web/e2e-tests/realm-creation.test.ts
 async function run(): Promise<void> {
-    const browser = await puppeteer.launch({
-        args: [
-            "--window-size=500,1024",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            // Helps render fonts correctly on Ubuntu: https://github.com/puppeteer/puppeteer/issues/661
-            "--font-render-hinting=none",
-        ],
+    // const browser = await puppeteer.launch({
+    //     args: [
+    //         "--window-size=500,1024",
+    //         "--no-sandbox",
+    //         "--disable-setuid-sandbox",
+    //         // Helps render fonts correctly on Ubuntu: https://github.com/puppeteer/puppeteer/issues/661
+    //         "--font-render-hinting=none",
+    //     ],
+    //     defaultViewport: null,
+    //     headless: true,
+    // });
+
+    // Find and replace puppeteer.launch with this:
+    const browser = await puppeteer.connect({
+        browserWSEndpoint: 'ws://host.docker.internal:9222/devtools/browser/95ccadc1-d292-4c54-8fc5-150777a4138c',
         defaultViewport: null,
-        headless: true,
     });
     try {
         const page = await browser.newPage();
         // deviceScaleFactor:2 gives better quality screenshots (higher pixel density)
-        await page.setViewport({width: 580, height: 1024, deviceScaleFactor: 2});
-        await page.goto(`${realmUrl}/devlogin`);
-        // wait for Iago devlogin button and click on it.
-        await page.waitForSelector('[value="iago@zulip.com"]');
+        await page.setViewport({ width: 580, height: 1024, deviceScaleFactor: 2 });
+        try {
+            await page.goto(`${realmUrl}/devlogin`);
 
-        // By waiting till DOMContentLoaded we're confirming that Iago is logged in.
-        await Promise.all([
-            page.waitForNavigation({waitUntil: "domcontentloaded"}),
-            page.click('[value="iago@zulip.com"]'),
-        ]);
+            // Check if the Iago button exists. Timeout after only 3 seconds 
+            // because if it's not there, we are likely already logged in.
+            const loginButton = await page.waitForSelector('[value="iago@zulip.com"]', { timeout: 3000 });
+
+            if (loginButton) {
+                await Promise.all([
+                    page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+                    page.click('[value="iago@zulip.com"]'),
+                ]);
+                console.log("Logged in as Iago.");
+            }
+        } catch (e) {
+            console.log("Already logged in or login page skipped, proceeding to narrow...");
+        }
 
         // Close any banner at the top of the app before taking any screenshots.
+        // const top_banner_close_button_selector = ".banner-close-action";
+        // await page.waitForSelector(top_banner_close_button_selector);
+        // await page.click(top_banner_close_button_selector);
+        // Replace the old banner code with this "Safe" version:
         const top_banner_close_button_selector = ".banner-close-action";
-        await page.waitForSelector(top_banner_close_button_selector);
-        await page.click(top_banner_close_button_selector);
+        try {
+            // Only wait 2 seconds for the banner. If it's not there, just move on.
+            await page.waitForSelector(top_banner_close_button_selector, { timeout: 2000 });
+            await page.click(top_banner_close_button_selector);
+        } catch (e) {
+            console.log("No banner found, skipping...");
+        }
 
         // Navigate to message and capture screenshot
         await page.goto(narrowUri, {
@@ -88,7 +111,8 @@ async function run(): Promise<void> {
             $(sel).remove();
         }, marker);
 
-        const messageSelector = `#message-row-${message_list_id}-${CSS.escape(messageId)}`;
+        // const messageSelector = `#message-row-${message_list_id}-${CSS.escape(messageId)}`;
+        const messageSelector = `[id$="-${messageId}"]`;
         await page.waitForSelector(messageSelector);
 
         const messageListBox = await page.$(messageListSelector);
@@ -110,10 +134,10 @@ async function run(): Promise<void> {
         const box = await messageListBox.boundingBox();
         assert.ok(box !== null);
         const imageDir = path.dirname(imagePath);
-        await fs.promises.mkdir(imageDir, {recursive: true});
+        await fs.promises.mkdir(imageDir, { recursive: true });
         await page.screenshot({
             path: imagePath,
-            clip: {x: box.x, y: box.y + 10, width: box.width - 70, height: box.height - 8},
+            clip: { x: box.x, y: box.y + 10, width: box.width - 70, height: box.height - 8 },
         });
     } finally {
         await browser.close();

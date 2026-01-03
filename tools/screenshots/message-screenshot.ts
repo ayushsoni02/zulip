@@ -3,7 +3,7 @@
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import path from "node:path";
-import {parseArgs} from "node:util";
+import { parseArgs } from "node:util";
 
 import "css.escape";
 import * as puppeteer from "puppeteer";
@@ -11,9 +11,9 @@ import * as z from "zod/mini";
 
 const usage = "Usage: message-screenshot.ts <message_id> <image_path> <realm_url>";
 const {
-    values: {help},
+    values: { help },
     positionals,
-} = parseArgs({options: {help: {type: "boolean"}}, allowPositionals: true});
+} = parseArgs({ options: { help: { type: "boolean" } }, allowPositionals: true });
 
 if (help) {
     console.log(usage);
@@ -37,28 +37,33 @@ console.log(`Capturing screenshot for message ${messageId} to ${imagePath}`);
 
 // TODO: Refactor to share code with web/e2e-tests/realm-creation.test.ts
 async function run(): Promise<void> {
-    const browser = await puppeteer.launch({
-        args: [
-            "--window-size=1400,1024",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            // Helps render fonts correctly on Ubuntu: https://github.com/puppeteer/puppeteer/issues/661
-            "--font-render-hinting=none",
-        ],
+    // const browser = await puppeteer.launch({
+    //     args: [
+    //         "--window-size=1400,1024",
+    //         "--no-sandbox",
+    //         "--disable-setuid-sandbox",
+    //         // Helps render fonts correctly on Ubuntu: https://github.com/puppeteer/puppeteer/issues/661
+    //         "--font-render-hinting=none",
+    //     ],
+    //     defaultViewport: null,
+    //     headless: true,
+    // });
+    const browser = await puppeteer.connect({
+        browserWSEndpoint: "ws://host.docker.internal:9222/devtools/browser/36fce4a7-09e1-43a9-97d3-d057da03cc23",
         defaultViewport: null,
-        headless: true,
     });
+    // ws://127.0.0.1:9222/devtools/browser/b2d4a999-47cd-47a2-8f06-73e33c5025bd
     try {
         const page = await browser.newPage();
         // deviceScaleFactor:2 gives better quality screenshots (higher pixel density)
-        await page.setViewport({width: 1280, height: 1024, deviceScaleFactor: 2});
+        await page.setViewport({ width: 1280, height: 1024, deviceScaleFactor: 2 });
         await page.goto(`${realmUrl}/devlogin`);
         // wait for Iago devlogin button and click on it.
         await page.waitForSelector('[value="iago@zulip.com"]');
 
         // By waiting till DOMContentLoaded we're confirming that Iago is logged in.
         await Promise.all([
-            page.waitForNavigation({waitUntil: "domcontentloaded"}),
+            page.waitForNavigation({ waitUntil: "domcontentloaded" }),
             page.click('[value="iago@zulip.com"]'),
         ]);
 
@@ -83,10 +88,10 @@ async function run(): Promise<void> {
         const box = await messageGroup.boundingBox();
         assert.ok(box !== null);
         const imageDir = path.dirname(imagePath);
-        await fs.promises.mkdir(imageDir, {recursive: true});
+        await fs.promises.mkdir(imageDir, { recursive: true });
         await page.screenshot({
             path: imagePath,
-            clip: {x: box.x - 5, y: box.y + 5, width: box.width + 10, height: box.height},
+            clip: { x: box.x - 5, y: box.y + 5, width: box.width + 10, height: box.height },
         });
     } finally {
         await browser.close();
